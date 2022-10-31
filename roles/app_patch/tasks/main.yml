@@ -1,0 +1,234 @@
+---
+# tasks file for app_patch.yml
+
+      - name: Taking the backup of route command output
+        shell: route -n
+        register: route_data
+        tags: precheck
+      
+      - name: Saving the route file backup to {{ backup_path }} directory
+        lineinfile:
+          dest: "{{ backup_path }}/{{ inventory_hostname }}_route_{{ ansible_date_time.date }}.txt"
+          insertafter: EOF
+          line: "{{ route_data.stdout }}"
+          create: yes
+        delegate_to: localhost
+        tags: precheck 
+
+      - name: Blacklist the packages which should not upgrade while patching
+        dpkg_selections:
+          name: "{{ item }}" 
+          selection: hold
+        with_items: " {{ blacklist_packages }} "  
+        when: blacklist_packages is iterable
+        tags: precheck  
+
+      - name: Check if itop init file exists
+        stat:
+         path: /etc/init.d/itop
+        register: status
+        tags: precheck
+      
+      - name: Fail if itop init file does not exists
+        fail:
+         msg: "/etc/init.d/itop file does not exists"  
+        when: status.stat.exists == False
+        tags: precheck
+
+      - name: Checking itop status before starting the patching
+        shell: /etc/init.d/itop status
+        register: itop_prestatus
+        ignore_errors: True
+        tags: stopapp
+
+      - debug: msg="{{itop_prestatus.stdout}}"
+        tags: stopapp
+        
+      - name: "Removing app server from load balancer .."
+        shell: mv -v /opt/itop/webapps/lb/status /opt/itop/webapps/lb/status_
+        when: "'is running' in itop_prestatus.stdout"
+        register: lb_out
+        tags: stopapp
+      
+      - name: show lb status file output
+        debug: msg="{{lb_out.stdout}}"
+        when: "'is running' in itop_prestatus.stdout"
+        tags: stopapp
+
+
+      - name: Stopping the itop service
+        shell: /etc/init.d/itop stop
+        when: "'is running' in itop_prestatus.stdout"
+        ignore_errors: True
+        tags: stopapp
+       
+      - name: Pausing playbook for 60 seconds, this is to ensure itop process stops completely.
+        wait_for:
+           timeout: 60
+        delegate_to: localhost
+        tags: stopapp
+        
+      - name: Is itop running or not ?
+        shell: /etc/init.d/itop status
+        register: itop_stopstatus
+        ignore_errors: True
+        tags: stopapp
+
+      - debug: msg="{{itop_stopstatus.stdout}}"
+        tags: stopapp
+      
+      - name: Performing auto-clean
+        apt:
+           autoclean: yes
+        tags: patchapp
+      
+      - name: Performing auto-remove
+        apt:
+          autoremove: yes
+        tags: patchapp
+
+      - name: Performing apt update
+        apt:
+          update_cache: yes
+          cache_valid_time: 3600
+        tags: patchapp
+
+      - name: Check if there are packages available to be installed/upgraded
+        command: /usr/bin/apt list --upgradable
+        register: packages
+        tags: patchapp
+         
+      - name: Pausing playbook for 5 seconds, this is to eliminate SSH error issue
+        wait_for:
+           timeout: 5
+        delegate_to: localhost
+        tags: patchapp       
+
+      - name: Performing patching on the server
+        apt:
+          upgrade: dist
+        when: packages.stderr != ""
+        tags: patchapp
+
+      - name: Pausing playbook for 5 seconds, this is to eliminate SSH error issue
+        wait_for:
+           timeout: 5
+        delegate_to: localhost
+        tags: patchapp
+
+      - name: Reboot the server post patching.
+        reboot:
+           msg: "Reboot initiated by ansible after patching"
+           connect_timeout: 5
+           reboot_timeout: 600
+           pre_reboot_delay: 0
+           post_reboot_delay: 30
+           test_command: whoami
+        tags: rebootapp
+      
+      - name: Renaming the itop-server.out before starting the itop process
+        shell: mv /var/log/itop/itop-server.out /var/log/itop/itop-server.out_{{ ansible_date_time.date }}
+        when: "'is running' in itop_prestatus.stdout"
+        tags: startapp
+
+      - name: Starting the itop service
+        shell: /etc/init.d/itop start
+        when: "'is running' in itop_prestatus.stdout"
+        ignore_errors: True
+        tags: startapp
+
+      - name: Start ntp & filebeat services
+        systemd:
+         state: started
+         name: "{{ item }}"
+        with_items: "{{ required_services }}"
+        tags: startapp 
+       
+      - name: Wait until the string 'Server startup' is found in the file /var/log/itop/itop-server.out
+        wait_for:
+          path: /var/log/itop/itop-server.out
+          search_regex: "^INFO: Server startup"
+          delay: 10
+          timeout: 600
+          msg: "Not able to find Server startup msg in itop-server.out"
+        register: out 
+        when: "'is running' in itop_prestatus.stdout" 
+        tags: startapp,check_startup
+     
+      - name: catch itop service startup log message
+        shell: grep 'Server startup' /var/log/itop/itop-server.out
+        register: itop_patch
+        when: "'is running' in itop_prestatus.stdout"
+        tags: startapp,patchreport
+
+      - name: Checking itop status post patching
+        shell: /etc/init.d/itop status
+        register: itop_startstatus
+        ignore_errors: True
+        tags: startapp,patchreport
+
+      - debug: msg="{{itop_startstatus.stdout}}"
+        tags: startapp
+
+      - name: check if 302 code is found in "wget http://127.0.0.1:8080"
+        uri:
+          url: http://127.0.0.1:8080
+          follow_redirects: none
+          method: GET
+          status_code: 302
+        retries: 120
+        delay: 5
+        when: "'is running' in itop_prestatus.stdout"
+        tags: startapp,check_302
+       
+      - name: Adding server to load balancer
+        shell: mv -v /opt/itop/webapps/lb/status_ /opt/itop/webapps/lb/status
+        when: "'is running' in itop_prestatus.stdout"
+        register: lb_status
+        tags: startapp
+
+      - name: show lb status file output
+        debug: msg="{{lb_status.stdout}}"
+        when: "'is running' in itop_prestatus.stdout"
+        tags: stopapp
+
+
+      - name: get uptime
+        shell: "uptime | awk -F, '{ print $1}'"
+        register: uptim
+        tags: patchreport
+
+      - name: get kernel version
+        shell: "uname -r"
+        register: unam
+        tags: patchreport
+
+      - name: Getting App Nodes Patching report status
+        template: 
+           src: itop_patch.j2
+           dest: "{{ logs_path }}/{{set}}_nodes_patch_report_{{ ansible_date_time.date }}.txt"
+        delegate_to: localhost
+        run_once: true
+        tags: patchreport
+
+      - name: Preparing App Patch report
+        shell: cat "{{ logs_path }}/{{set}}_nodes_patch_report_{{ ansible_date_time.date }}.txt"
+        register: patch_data
+        delegate_to: localhost
+        run_once: true
+        tags: patchreport
+
+      - name: Append to Final App Patch report
+        lineinfile: 
+          dest: "{{ logs_path }}/final_app_patching_report_{{ ansible_date_time.date }}.txt"
+          insertafter: EOF
+          line: "{{ patch_data.stdout }}"
+          create: yes
+        run_once: true  
+        delegate_to: localhost
+        tags: patchreport
+
+      - debug: msg="{{patch_data.stdout_lines}}" 
+        delegate_to: localhost 
+        run_once: true
+        tags: patchreport

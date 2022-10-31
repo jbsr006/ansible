@@ -1,0 +1,4 @@
+---
+ - hosts: all
+   roles:
+    - get_jp_process_status

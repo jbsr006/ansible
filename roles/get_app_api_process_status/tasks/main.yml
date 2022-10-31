@@ -1,0 +1,40 @@
+---
+- name: Check if itop init file exists
+  stat:
+   path: /etc/init.d/itop
+  register: status
+
+- name: Fail if init file does not exists
+  fail:
+   msg: "/etc/init.d/itop file does not exists"
+  when: status.stat.exists == False
+
+- name: Checking itop status
+  shell: /etc/init.d/itop status
+  register: itop_status
+  ignore_errors: True
+  #no_log: True
+
+- name: get kernel version
+  shell: "uname -r"
+  register: unam
+
+- debug: msg="{{itop_status.stdout}}"
+
+- name: Getting APP Nodes service status
+  template:
+    src: itop_status.j2
+    dest: "/tmp/app_api_status_{{ ansible_date_time.date }}.txt"
+  delegate_to: localhost
+  run_once: true
+
+- name: show APP Nodes service status
+  shell: cat "/tmp/app_api_status_{{ ansible_date_time.date }}.txt"
+  register: output  
+  delegate_to: localhost
+  run_once: true
+
+- debug: msg="{{output.stdout_lines}}" 
+  delegate_to: localhost
+  run_once: true
+

@@ -1,0 +1,194 @@
+---
+# tasks file for jp_patch.yml
+
+      - name: Taking the backup of route command output
+        shell: route -n
+        register: route_data
+        tags: precheck
+      
+      - name: Saving the route file backup to {{ backup_path }} directory
+        lineinfile:
+          dest: "{{ backup_path }}/{{ inventory_hostname }}_route_{{ ansible_date_time.date }}.txt"
+          insertafter: EOF
+          line: "{{ route_data.stdout }}"
+          create: yes
+        delegate_to: localhost
+        tags: precheck 
+
+      - name: Blacklist the packages which should not upgrade while patching
+        dpkg_selections:
+          name: "{{ item }}" 
+          selection: hold
+        with_items: " {{ blacklist_packages }} "  
+        when: blacklist_packages is iterable
+        tags: precheck  
+
+      - name: Check if JobProcessor init file exists
+        stat:
+         path: /etc/init.d/JobProcessor
+        register: status
+        tags: precheck
+      
+      - name: Fail if init file does not exists
+        fail:
+         msg: "/etc/init.d/JobProcessor file does not exists"  
+        when: status.stat.exists == False
+        tags: precheck
+
+      - name: Checking Jobprocessor status before starting the patching
+        shell: /etc/init.d/JobProcessor status
+        register: JobProcesser_prestatus
+        ignore_errors: True
+        tags: stopjp
+
+      - debug: msg="{{JobProcesser_prestatus.stdout}}"
+        tags: stopjp
+
+      - name: Stopping the Jobprocessor service
+        shell: /etc/init.d/JobProcessor stop
+        when: "'running' in JobProcesser_prestatus.stdout"
+        ignore_errors: True
+        tags: stopjp
+     
+      - name: Pausing playbook, this is to ensure jobprocessor process stops completely.
+        wait_for:
+           timeout: "{{ jp_stop_time }}"
+        delegate_to: localhost
+        tags: stopjp
+
+      - name: Is Jobprocessor running or not ?
+        shell: /etc/init.d/JobProcessor status
+        register: JobProcesser_stopstatus
+        ignore_errors: True
+        tags: stopjp
+
+      - debug: msg="{{JobProcesser_stopstatus.stdout}}"
+        tags: stopjp
+      
+      - name: Performing auto-clean
+        apt:
+           autoclean: yes
+        tags: patchjp
+      
+      - name: Performing auto-remove
+        apt:
+          autoremove: yes
+        tags: patchjp
+
+      - name: Performing apt update
+        apt:
+          update_cache: yes
+          cache_valid_time: 3600
+        tags: patchjp
+
+      - name: Check if there are packages available to be installed/upgraded
+        command: /usr/bin/apt list --upgradable
+        register: packages
+        tags: patchjp
+         
+      - name: Pausing playbook for 5 seconds, this is to eliminate SSH error issue
+        wait_for:
+           timeout: 5
+        delegate_to: localhost
+        tags: patchjp        
+
+      - name: Performing patching on the server
+        apt:
+          upgrade: dist
+        when: packages.stderr != ""
+        tags: patchjp
+
+      - name: Pausing playbook for 5 seconds, this is to eliminate SSH error issue
+        wait_for:
+           timeout: 5
+        delegate_to: localhost
+        tags: patchjp
+
+      - name: Reboot the server post patching.
+        reboot:
+           msg: "Reboot initiated by ansible after patching"
+           connect_timeout: 5
+           reboot_timeout: 600
+           pre_reboot_delay: 0
+           post_reboot_delay: 30
+           test_command: whoami
+        tags: rebootjp
+
+      - name: Renaming the JobProcessor.log before starting the JobProcessor
+        shell: mv /var/log/JobProcessor/JobProcessor.log /var/log/JobProcessor/JobProcessor.log_{{ ansible_date_time.date }}
+        when: "'running' in JobProcesser_prestatus.stdout"
+          
+      - name: Starting the Jobprocessor service
+        shell: /etc/init.d/JobProcessor start
+        when: "'running' in JobProcesser_prestatus.stdout"
+        ignore_errors: True
+        tags: startjp
+
+      - name: Start required services
+        systemd:
+         state: started
+         name: "{{ item }}"
+        with_items: "{{ required_services }}" 
+        tags: startjp  
+
+      - name: Pausing playbook, this is to ensure JobProcessor log file populates SUCCESS message.
+        wait_for:
+           timeout: "{{ jp_start_time }}"
+        delegate_to: localhost
+        when: "'running' in JobProcesser_prestatus.stdout"
+        tags: startjp
+
+      - name: Checking JobProcessor status post patching
+        shell: /etc/init.d/JobProcessor status
+        register: JobProcesser_startstatus
+        ignore_errors: True
+        tags: startjp,patchreport
+
+      - debug: msg="{{JobProcesser_startstatus.stdout}}"
+        tags: startjp  
+
+      - name: get uptime
+        shell: "uptime | awk -F, '{ print $1}'"
+        register: uptim
+        tags: patchreport
+
+      - name: get kernel version
+        shell: "uname -r"
+        register: unam
+        tags: patchreport
+      
+
+      - name: get JobProcessor log status post patching
+        shell: "grep 'SUCCESS' /var/log/JobProcessor/JobProcessor.log | tail -n1"
+        register: JobProcesser_patch
+        tags: patchreport
+
+      - name: Getting JP Nodes Patching report status
+        template: 
+           src: JobProcessor_patch.j2
+           dest: "{{ logs_path }}/{{set}}_nodes_patch_report_{{ ansible_date_time.date }}.txt"
+        delegate_to: localhost
+        run_once: true
+        tags: patchreport
+
+      - name: Preparing JP Patch report
+        shell: cat "{{ logs_path }}/{{set}}_nodes_patch_report_{{ ansible_date_time.date }}.txt"
+        register: patch_data
+        delegate_to: localhost
+        run_once: true
+        tags: patchreport
+
+      - name: Append to Final JP Patch report
+        lineinfile: 
+          dest: "{{ logs_path }}/final_jp_patching_report_{{ ansible_date_time.date }}.txt"
+          insertafter: EOF
+          line: "{{ patch_data.stdout }}"
+          create: yes
+        run_once: true  
+        delegate_to: localhost
+        tags: patchreport
+
+      - debug: msg="{{patch_data.stdout_lines}}"
+        delegate_to: localhost
+        run_once: true
+        tags: patchreport  

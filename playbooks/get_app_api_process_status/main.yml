@@ -1,0 +1,4 @@
+---
+ - hosts: all
+   roles:
+    - get_app_api_process_status

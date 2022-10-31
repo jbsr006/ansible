@@ -1,0 +1,40 @@
+---
+- name: Check if JobProcessor init file exists
+  stat:
+   path: /etc/init.d/JobProcessor
+  register: status
+
+- name: Fail if init file does not exists
+  fail:
+   msg: "/etc/init.d/JobProcessor file does not exists"
+  when: status.stat.exists == False
+
+- name: Checking Jobprocessor status
+  shell: /etc/init.d/JobProcessor status
+  register: JobProcesser_status
+  ignore_errors: True
+  #no_log: True
+  
+- debug: msg="{{JobProcesser_status.stdout}}"
+
+- name: get kernel version
+  shell: "uname -r"
+  register: unam  
+
+- name: Getting JP Nodes service status
+  template:
+    src: JobProcessor_status.j2
+    dest: "/tmp/jp_status_{{ ansible_date_time.date }}.txt"
+  delegate_to: localhost
+  run_once: true
+
+- name: show JP Nodes service status
+  shell: cat "/tmp/jp_status_{{ ansible_date_time.date }}.txt"
+  register: output  
+  delegate_to: localhost
+  run_once: true
+
+- debug: msg="{{output.stdout_lines}}" 
+  delegate_to: localhost
+  run_once: true
+
