@@ -192,10 +192,6 @@
         when: "'is running' in itop_prestatus.stdout"
         tags: stopapp
 
-      - name: Ensure nfs share /opt/datastore is mounted
-        shell: mount /opt/datastore
-        when: "'is running' in itop_prestatus.stdout"
-        tags: check_mount
 
       - name: get uptime
         shell: "uptime | awk -F, '{ print $1}'"

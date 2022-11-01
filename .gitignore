@@ -1,0 +1,5 @@
+group_vars/
+orig/
+backup/
+logs/
+hosts
