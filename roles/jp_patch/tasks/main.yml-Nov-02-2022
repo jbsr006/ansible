@@ -147,7 +147,6 @@
       - debug: msg="{{JobProcesser_startstatus.stdout}}"
         tags: startjp  
 
-
       - name: get uptime
         shell: "uptime | awk -F, '{ print $1}'"
         register: uptim

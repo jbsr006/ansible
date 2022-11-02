@@ -149,7 +149,7 @@
           path: /var/log/itop/itop-server.out
           search_regex: "^INFO: Server startup"
           delay: 10
-          timeout: 30
+          timeout: 600
           msg: "Not able to find Server startup msg in itop-server.out"
         register: out 
         when: "'is running' in itop_prestatus.stdout" 
