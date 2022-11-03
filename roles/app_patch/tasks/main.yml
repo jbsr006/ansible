@@ -62,9 +62,9 @@
         ignore_errors: True
         tags: stopapp
        
-      - name: Pausing playbook for 60 seconds, this is to ensure itop process stops completely.
+      - name: Pausing playbook, this is to ensure itop process stops completely.
         wait_for:
-           timeout: 60
+           timeout: "{{ app_stop_time }}"
         delegate_to: localhost
         tags: stopapp
         

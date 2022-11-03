@@ -3,3 +3,4 @@ orig/
 backup/
 logs/
 hosts
+test_playbooks/
