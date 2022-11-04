@@ -152,21 +152,12 @@
         shell: "uptime | awk -F, '{ print $1}'"
         register: uptim
         tags: patchreport
-      
-      - name: get release version
-        shell: "lsb_release -r | awk '{print $2}'"
-        register: lsb
-        tags: patchreport  
 
       - name: get kernel version
         shell: "uname -r"
         register: unam
         tags: patchreport
-        
-      - name: get pending updates status
-        shell: "/usr/lib/update-notifier/apt-check --human-readable | head -n1"
-        register: pending
-        tags: patchreport
+      
 
       - name: get JobProcessor log status post patching
         shell: "grep 'SUCCESS' /var/log/JobProcessor/JobProcessor.log | tail -n1"
