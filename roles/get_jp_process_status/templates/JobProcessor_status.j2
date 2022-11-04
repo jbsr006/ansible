@@ -1,3 +1,3 @@
 {% for host in play_hosts %}
-{{ host }} | {{ hostvars[host]['JobProcesser_status']['stdout'] }} | {{ hostvars[host]['unam']['stdout'] }}
+{{ host }}|{{ hostvars[host]['JobProcesser_status']['stdout'] }}|{{ hostvars[host]['lsb']['stdout'] }}|{{ hostvars[host]['unam']['stdout'] }}|{{ hostvars[host]['pending']['stdout'] }}
 {% endfor %}

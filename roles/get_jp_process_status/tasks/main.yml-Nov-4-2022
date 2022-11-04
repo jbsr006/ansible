@@ -17,17 +17,9 @@
   
 - debug: msg="{{JobProcesser_status.stdout}}"
 
-- name: get release version
-  shell: "lsb_release -r | awk '{print $2}'"
-  register: lsb
-
 - name: get kernel version
   shell: "uname -r"
-  register: unam
-
-- name: get pending updates status
-  shell: "/usr/lib/update-notifier/apt-check --human-readable | head -n1"
-  register: pending
+  register: unam  
 
 - name: Getting JP Nodes service status
   template:
