@@ -201,6 +201,16 @@
         shell: "uptime | awk -F, '{ print $1}'"
         register: uptim
         tags: patchreport
+      
+      - name: get release version
+        shell: "lsb_release -r | awk '{print $2}'"
+        register: lsb
+        tags: patchreport
+
+      - name: get pending updates status
+        shell: "/usr/lib/update-notifier/apt-check --human-readable | head -n1"
+        register: pending
+        tags: patchreport
 
       - name: get kernel version
         shell: "uname -r"
@@ -230,7 +240,7 @@
           create: yes
         run_once: true  
         delegate_to: localhost
-        tags: patchreport
+        #tags: patchreport
 
       - debug: msg="{{patch_data.stdout_lines}}" 
         delegate_to: localhost 
